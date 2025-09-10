@@ -44,68 +44,61 @@ app.post('/preencher-energisa', async (req, res) => {
     const existingPdfBytes = fs.readFileSync(templatePath);
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
     
-    // Verificar se o PDF tem formulário
+    const form = pdfDoc.getForm();
+    
+    // Mapeamento inteligente baseado na ordem dos campos
+    // Assumindo que os campos seguem a ordem visual do formulário
+    
     try {
-      const form = pdfDoc.getForm();
-      const fields = form.getFields();
-      
-      console.log('=== ANÁLISE DO PDF ===');
-      console.log('Número de campos encontrados:', fields.length);
-      
-      if (fields.length > 0) {
-        console.log('Campos disponíveis:');
-        fields.forEach((field, index) => {
-          console.log(`${index + 1}. ${field.getName()} (${field.constructor.name})`);
-        });
-        
-        // Tentar preencher campos genéricos
-        fields.forEach(field => {
-          const fieldName = field.getName().toLowerCase();
-          console.log('Tentando preencher campo:', fieldName);
-          
-          try {
-            if (fieldName.includes('cadastro') && tipoOperacao === 'cadastro') {
-              field.check();
-            } else if (fieldName.includes('titular') || fieldName.includes('nome')) {
-              field.setText(titular.nome);
-            } else if (fieldName.includes('cpf')) {
-              field.setText(titular.cpf || '');
-            } else if (fieldName.includes('unidade')) {
-              field.setText(unidadeConsumidora || '');
-            }
-          } catch (e) {
-            console.log(`Erro ao preencher ${fieldName}:`, e.message);
-          }
-        });
-        
-      } else {
-        console.log('PDF não possui campos de formulário - criando overlay de texto');
-        
-        // Se não tem campos, adicionar texto por cima
-        const pages = pdfDoc.getPages();
-        const firstPage = pages[0];
-        
-        // Adicionar texto nas posições aproximadas
-        firstPage.drawText(`UC: ${unidadeConsumidora}`, {
-          x: 700, y: 238, size: 10
-        });
-        
-        firstPage.drawText(titular.nome, {
-          x: 400, y: 630, size: 10
-        });
-        
-        // Marcar checkbox cadastro (aproximadamente)
-        firstPage.drawRectangle({
-          x: 395, y: 247,
-          width: 8,
-          height: 8,
-          color: { r: 0, g: 0, b: 0 }
-        });
+      // Checkboxes de tipo de operação (posições 32, 33, 34)
+      if (tipoOperacao === 'cadastro') {
+        form.getCheckBox('checkbox_46zoto').check();
+      } else if (tipoOperacao === 'descadastramento') {
+        form.getCheckBox('checkbox_47xoyv').check();
+      } else if (tipoOperacao === 'alteracao') {
+        form.getCheckBox('checkbox_48tjdb').check();
       }
       
+      // Unidade consumidora geradora (provavelmente um dos primeiros campos)
+      form.getTextField('text_4yrbk').setText(unidadeConsumidora || '');
+      
+      // Beneficiários - assumindo que há 6 linhas na tabela
+      // Cada linha tem: UC, Nome, CPF/CNPJ, Endereço, %
+      beneficiarios.forEach((ben, index) => {
+        const baseIndex = 5 + (index * 5); // Começando do campo 5, 5 campos por beneficiário
+        
+        if (baseIndex < 30) { // Garantir que não exceda os campos disponíveis
+          try {
+            form.getTextField(`text_${baseIndex}kxia`).setText(ben.unidadeConsumidora || '');
+            form.getTextField(`text_${baseIndex + 1}sniw`).setText(ben.nomeDoTitular || '');
+            form.getTextField(`text_${baseIndex + 2}sko`).setText(ben.cpfCnpj || '');
+            form.getTextField(`text_${baseIndex + 3}cxvm`).setText(ben.endereco || '');
+            form.getTextField(`text_${baseIndex + 4}hgrb`).setText(ben.percentual + '%' || '');
+          } catch (e) {
+            console.log(`Erro ao preencher beneficiário ${index + 1}:`, e.message);
+          }
+        }
+      });
+      
+      // Dados do titular (provavelmente nos últimos campos)
+      form.getTextField('text_36kesx').setText(titular.nome || '');
+      form.getTextField('text_37iuuk').setText(titular.cpf || '');
+      form.getTextField('text_38xwcc').setText(titular.cnpj || '');
+      form.getTextField('text_39mptv').setText(titular.telefoneResidencial || '');
+      form.getTextField('text_40dykc').setText(titular.telefoneComercial || '');
+      
+      // Data de assinatura
+      if (dataAssinatura) {
+        form.getTextField('text_41ojrj').setText(dataAssinatura.cidade || '');
+        form.getTextField('text_42pmfj').setText(dataAssinatura.dia || '');
+        form.getTextField('text_43lpbc').setText(dataAssinatura.mes || '');
+        form.getTextField('text_44crle').setText(dataAssinatura.ano || '');
+      }
+      
+      console.log('Campos preenchidos com sucesso!');
+      
     } catch (e) {
-      console.log('Erro ao processar formulário:', e.message);
-      // PDF pode não ter formulário, tentar adicionar texto diretamente
+      console.log('Erro ao preencher campos:', e.message);
     }
 
     const pdfBytes = await pdfDoc.save();
