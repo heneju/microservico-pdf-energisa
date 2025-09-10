@@ -1,7 +1,6 @@
 const express = require('express');
 const { PDFDocument } = require('pdf-lib');
 const fs = require('fs');
-const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,103 +41,71 @@ app.post('/preencher-energisa', async (req, res) => {
     }
 
     const templatePath = './templates/FORMULARIO_ENERGISA_PLACEFIELDS.pdf';
-
-    console.log('Procurando template em:', templatePath);
-    
-    try {
-      console.log('Arquivos na pasta templates:', fs.readdirSync('./templates/'));
-    } catch (e) {
-      console.log('Erro ao listar pasta templates:', e.message);
-    }
-
-    if (!fs.existsSync(templatePath)) {
-      console.log('Template não encontrado. Listando arquivos:');
-      try {
-        const files = fs.readdirSync('./templates/');
-        console.log('Arquivos encontrados:', files);
-      } catch (e) {
-        console.log('Pasta templates não existe:', e.message);
-      }
-      return res.status(500).json({ error: 'Template PDF não encontrado' });
-    }
-
     const existingPdfBytes = fs.readFileSync(templatePath);
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
     
-    const form = pdfDoc.getForm();
-    const fields = form.getFields();
-    
-    console.log('Campos encontrados no PDF:', fields.map(field => field.getName()));
-
+    // Verificar se o PDF tem formulário
     try {
-      if (tipoOperacao === 'cadastro') {
-        form.getCheckBox('cadastro').check();
-      } else if (tipoOperacao === 'descadastramento') {
-        form.getCheckBox('descadastramento').check();
-      } else if (tipoOperacao === 'alteracao') {
-        form.getCheckBox('alteracao').check();
+      const form = pdfDoc.getForm();
+      const fields = form.getFields();
+      
+      console.log('=== ANÁLISE DO PDF ===');
+      console.log('Número de campos encontrados:', fields.length);
+      
+      if (fields.length > 0) {
+        console.log('Campos disponíveis:');
+        fields.forEach((field, index) => {
+          console.log(`${index + 1}. ${field.getName()} (${field.constructor.name})`);
+        });
+        
+        // Tentar preencher campos genéricos
+        fields.forEach(field => {
+          const fieldName = field.getName().toLowerCase();
+          console.log('Tentando preencher campo:', fieldName);
+          
+          try {
+            if (fieldName.includes('cadastro') && tipoOperacao === 'cadastro') {
+              field.check();
+            } else if (fieldName.includes('titular') || fieldName.includes('nome')) {
+              field.setText(titular.nome);
+            } else if (fieldName.includes('cpf')) {
+              field.setText(titular.cpf || '');
+            } else if (fieldName.includes('unidade')) {
+              field.setText(unidadeConsumidora || '');
+            }
+          } catch (e) {
+            console.log(`Erro ao preencher ${fieldName}:`, e.message);
+          }
+        });
+        
+      } else {
+        console.log('PDF não possui campos de formulário - criando overlay de texto');
+        
+        // Se não tem campos, adicionar texto por cima
+        const pages = pdfDoc.getPages();
+        const firstPage = pages[0];
+        
+        // Adicionar texto nas posições aproximadas
+        firstPage.drawText(`UC: ${unidadeConsumidora}`, {
+          x: 700, y: 238, size: 10
+        });
+        
+        firstPage.drawText(titular.nome, {
+          x: 400, y: 630, size: 10
+        });
+        
+        // Marcar checkbox cadastro (aproximadamente)
+        firstPage.drawRectangle({
+          x: 395, y: 247,
+          width: 8,
+          height: 8,
+          color: { r: 0, g: 0, b: 0 }
+        });
       }
+      
     } catch (e) {
-      console.log('Checkboxes de tipo não encontrados:', e.message);
-    }
-
-    try {
-      form.getTextField('unidadeConsumidora').setText(unidadeConsumidora || '');
-    } catch (e) {
-      console.log('Campo unidadeConsumidora não encontrado:', e.message);
-    }
-
-    try {
-      form.getTextField('titularNome').setText(titular.nome || '');
-    } catch (e) {
-      console.log('Campo titularNome não encontrado:', e.message);
-    }
-
-    try {
-      form.getTextField('titularCPF').setText(titular.cpf || '');
-    } catch (e) {
-      console.log('Campo titularCPF não encontrado:', e.message);
-    }
-
-    try {
-      form.getTextField('titularCNPJ').setText(titular.cnpj || '');
-    } catch (e) {
-      console.log('Campo titularCNPJ não encontrado:', e.message);
-    }
-
-    try {
-      form.getTextField('telefoneResidencial').setText(titular.telefoneResidencial || '');
-    } catch (e) {
-      console.log('Campo telefoneResidencial não encontrado:', e.message);
-    }
-
-    try {
-      form.getTextField('telefoneComercial').setText(titular.telefoneComercial || '');
-    } catch (e) {
-      console.log('Campo telefoneComercial não encontrado:', e.message);
-    }
-
-    beneficiarios.forEach((ben, index) => {
-      try {
-        form.getTextField(`beneficiario${index + 1}UC`).setText(ben.unidadeConsumidora || '');
-        form.getTextField(`beneficiario${index + 1}Nome`).setText(ben.nomeDoTitular || '');
-        form.getTextField(`beneficiario${index + 1}CPF`).setText(ben.cpfCnpj || '');
-        form.getTextField(`beneficiario${index + 1}Endereco`).setText(ben.endereco || '');
-        form.getTextField(`beneficiario${index + 1}Percentual`).setText(ben.percentual || '');
-      } catch (e) {
-        console.log(`Campos do beneficiário ${index + 1} não encontrados:`, e.message);
-      }
-    });
-
-    if (dataAssinatura) {
-      try {
-        form.getTextField('cidade').setText(dataAssinatura.cidade || '');
-        form.getTextField('dia').setText(dataAssinatura.dia || '');
-        form.getTextField('mes').setText(dataAssinatura.mes || '');
-        form.getTextField('ano').setText(dataAssinatura.ano || '');
-      } catch (e) {
-        console.log('Campos de data não encontrados:', e.message);
-      }
+      console.log('Erro ao processar formulário:', e.message);
+      // PDF pode não ter formulário, tentar adicionar texto diretamente
     }
 
     const pdfBytes = await pdfDoc.save();
