@@ -43,7 +43,11 @@ app.post('/preencher-energisa', async (req, res) => {
    }
 
    // Carregar o PDF template da Energisa
+<<<<<<< HEAD
    const templatePath = './templates/formularioenergisa.pdf';
+=======
+   const templatePath = './templates/FORMULARIO_ENERGISA_PLACEFIELDS.pdf';
+>>>>>>> 4005c840ae52b285216d92d8f73722265fac0328
 
    console.log('Procurando template em:', templatePath);
    
